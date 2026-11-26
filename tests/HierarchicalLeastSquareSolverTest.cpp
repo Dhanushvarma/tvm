@@ -17,6 +17,10 @@
 
 #include <Eigen/SVD>
 
+#include <cmath>
+#include <utility>
+#include <vector>
+
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #define DOCTEST_CONFIG_SUPER_FAST_ASSERTS
 #include "doctest/EigenDoctest.h"
@@ -34,6 +38,23 @@ MatrixXd pinv(const MatrixConstRef & M, double eps = 1e-10)
   int r = svd.rank();
   return svd.matrixV().leftCols(r) * svd.singularValues().head(r).cwiseInverse().asDiagonal()
          * svd.matrixU().leftCols(r).transpose();
+}
+
+/** The lexicographic solution of levels (A_k, b_k) by projections, each level solved in the null space of the ones above
+ * (the hand computation of the test cases below, for any number of levels) */
+VectorXd lexicographic(const std::vector<std::pair<MatrixXd, VectorXd>> & levels, Index n)
+{
+  VectorXd x = VectorXd::Zero(n);
+  MatrixXd P = MatrixXd::Identity(n, n);
+  MatrixXd stacked(0, n);
+  for(const auto & [A, b] : levels)
+  {
+    x += pinv(A * P) * (b - A * x);
+    stacked.conservativeResize(stacked.rows() + A.rows(), n);
+    stacked.bottomRows(A.rows()) = A;
+    P = MatrixXd::Identity(n, n) - pinv(stacked) * stacked;
+  }
+  return x;
 }
 
 #ifdef TVM_USE_LEXLS
@@ -182,6 +203,72 @@ TEST_CASE("HierarchicalLeastSquares")
     solver.solve(pb);
     FAST_CHECK_EQ(x->value()[0], doctest::Approx(1).epsilon(1e-10));
     FAST_CHECK_EQ(y->value()[0], doctest::Approx(-1).epsilon(1e-10));
+  }
+
+  SUBCASE("Runtime changes")
+  {
+    // A weight changed, a task removed and a task added between solves: the scheme rebuilds its solver data each time
+    const Index n = 8;
+    VariablePtr x = Space(static_cast<int>(n)).createVariable("x");
+    MatrixXd A0(3, n), A1(3, n), A2a(3, n), A2b(3, n), A3(2, n);
+    VectorXd b0(3), b1(3), b2a(3), b2b(3), b3(2);
+    // rank(A0) = 2; A1 projected on the null space of A0 has rank 2, which leaves 4 degrees of freedom to level 2,
+    // where tasks a and b (6 rows) compete through their weights
+    A0 = MatrixXd::Random(3, 2) * MatrixXd::Random(2, n);
+    A1 << MatrixXd::Random(1, 3) * A0, MatrixXd::Random(2, n);
+    A2a.setRandom();
+    A2b.setRandom();
+    A3.setRandom();
+    b0.setRandom();
+    b1.setRandom();
+    b2a.setRandom();
+    b2b.setRandom();
+    b3.setRandom();
+
+    LinearizedControlProblem pb;
+    pb.add(A0 * x - b0 == 0., {PriorityLevel(0)});
+    pb.add(A1 * x - b1 == 0., {PriorityLevel(1)});
+    auto ta = pb.add(A2a * x - b2a == 0., {PriorityLevel(2), Weight(1.)});
+    auto tb = pb.add(A2b * x - b2b == 0., {PriorityLevel(2), Weight(4.)});
+
+    scheme::HierarchicalLeastSquares solver(LexLSHLSSolverOptions{});
+
+    // Level 2 minimises |A2a x - b2a|^2 + w |A2b x - b2b|^2: its rows are scaled by the square roots of the weights
+    auto level2 = [&](double wa, double wb)
+    {
+      MatrixXd A(6, n);
+      VectorXd b(6);
+      A << std::sqrt(wa) * A2a, std::sqrt(wb) * A2b;
+      b << std::sqrt(wa) * b2a, std::sqrt(wb) * b2b;
+      return std::make_pair(A, b);
+    };
+    // Each level's fitted value A_k x is unique at the lexicographic optimum, while x need not be: the solver may leave
+    // a free direction elsewhere than the minimum-norm solution of the hand computation
+    auto check = [&](const std::vector<std::pair<MatrixXd, VectorXd>> & levels)
+    {
+      const VectorXd xs = lexicographic(levels, n);
+      for(const auto & [A, b] : levels)
+      {
+        FAST_CHECK_EQ(A * x->value(), Approx(A * xs).epsilon(1e-8));
+      }
+    };
+    solver.solve(pb);
+    check({{A0, b0}, {A1, b1}, level2(1., 4.)});
+
+    tb->requirements.weight() = 9.;
+    solver.solve(pb);
+    check({{A0, b0}, {A1, b1}, level2(1., 9.)});
+
+    // Without task a, task b (3 rows) leaves one degree of freedom to level 3
+    pb.remove(*ta);
+    solver.solve(pb);
+    check({{A0, b0}, {A1, b1}, {A2b, b2b}});
+
+    pb.add(A3 * x - b3 == 0., {PriorityLevel(3)});
+    solver.solve(pb);
+    check({{A0, b0}, {A1, b1}, {A2b, b2b}, {A3, b3}});
+    // With the four levels, x is unique: the full solution too
+    FAST_CHECK_EQ(x->value(), Approx(lexicographic({{A0, b0}, {A1, b1}, {A2b, b2b}, {A3, b3}}, n)).epsilon(1e-8));
   }
 }
 #endif

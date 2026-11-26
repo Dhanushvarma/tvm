@@ -40,53 +40,14 @@ bool HierarchicalLeastSquares::solve_(const LinearizedControlProblem & problem,
 void HierarchicalLeastSquares::updateComputationData_(const LinearizedControlProblem & problem,
                                                       internal::ProblemComputationData * data) const
 {
-  using EventType = ProblemDefinitionEvent::Type;
-  solver::internal::SolverEvents se;
-
   if(!data->hasEvents())
   {
     return;
   }
-
-  Memory * memory = static_cast<Memory *>(data);
-
-  // If some events require to rebuild the data, we skip all other events.
-  for(const auto & e : memory->events())
-  {
-    if(e.type() == EventType::SubstitutionAddition || e.type() == EventType::SubstitutionRemoval)
-    {
-      resetComputationData(problem, memory);
-      return;
-    }
-  }
-  while(memory->hasEvents())
-  {
-    auto e = memory->popEvent();
-    switch(e.type())
-    {
-      case EventType::WeightChange: {
-        const auto & c = problem.constraintWithRequirements(e.typedEmitter<EventType::WeightChange>());
-        se.addScalarWeightEvent(c.constraint.get());
-      }
-      break;
-      case EventType::AnisotropicWeightChange: {
-        const auto & c = problem.constraintWithRequirements(e.typedEmitter<EventType::AnisotropicWeightChange>());
-        se.addVectorWeightEvent(c.constraint.get());
-      }
-      break;
-      case EventType::TaskAddition:
-        addTask(problem, memory, e.typedEmitter<EventType::TaskAddition>(), se);
-        break;
-      case EventType::TaskRemoval:
-        removeTask(problem, memory, e.typedEmitter<EventType::TaskRemoval>(), se);
-        break;
-      default:
-        throw std::runtime_error("[HierarchicalLeastSquares::updateComputationData_] Unimplemented event handling.");
-    }
-  }
-
-  memory->variables(); // update variable vector if needed
-  memory->solver->process(se);
+  // The hierarchical least-squares solvers process no change incrementally (their process functions are not
+  // implemented), so any change to the problem (a task added or removed, a weight changed, a substitution added or
+  // removed) rebuilds the solver's data from the problem. The reset also clears the events.
+  resetComputationData(problem, static_cast<Memory *>(data));
 }
 
 std::unique_ptr<HierarchicalLeastSquares::Memory> HierarchicalLeastSquares::createComputationData_(
