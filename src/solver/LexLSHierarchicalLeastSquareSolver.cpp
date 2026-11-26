@@ -4,12 +4,19 @@
 
 #include <tvm/scheme/internal/AssignmentTarget.h>
 
+#include <atomic>
 #include <iostream>
 #include <numeric> // for std::iota
 #include <string>
 
 namespace tvm
 {
+
+namespace
+{
+/** LexLSHierarchicalLeastSquareSolver::cappedSolves */
+std::atomic<std::size_t> cappedSolveCount{0};
+} // namespace
 
 namespace solver
 {
@@ -18,7 +25,8 @@ LexLSHierarchicalLeastSquareSolver::LexLSHierarchicalLeastSquareSolver(const Lex
   xl_(boundData_.col(0)), xu_(boundData_.col(0)), warmStart_(options.warmStart().value()), solver_(),
   autoMinNorm_(false), big_number_(options.big_number().value()),
   feasibleFirstLevel_(options.feasibleFirstLevel().value()),
-  regularizationFactors_(options.regularizationFactors().value())
+  regularizationFactors_(options.regularizationFactors().value()),
+  acceptCappedSolve_(options.acceptCappedSolve().value())
 {
   LexLS::ParametersLexLSI param;
   TVM_PROCESS_OPTION_PUBLIC_ACCESS(max_number_of_factorizations, param);
@@ -266,9 +274,22 @@ bool LexLSHierarchicalLeastSquareSolver::solve_()
     x0_ = solver_.get_x();
   }
 
+  if(status == LexLS::TerminationStatus::MAX_NUMBER_OF_FACTORIZATIONS_EXCEEDED && acceptCappedSolve_)
+  {
+    const std::size_t n = ++cappedSolveCount;
+    if(n == 1 || n % 100 == 0)
+    {
+      std::cerr << "[LexLSHierarchicalLeastSquareSolver] a solve reached the cap of " << solver_.getFactorizationsCount()
+                << " factorizations and uses LexLS's last iterate (" << n << " such solves in this process)"
+                << std::endl;
+    }
+    return true;
+  }
   return status == LexLS::TerminationStatus::PROBLEM_SOLVED
          || status == LexLS::TerminationStatus::PROBLEM_SOLVED_CYCLING_HANDLING;
 }
+
+std::size_t LexLSHierarchicalLeastSquareSolver::cappedSolves() noexcept { return cappedSolveCount; }
 
 const Eigen::VectorXd & LexLSHierarchicalLeastSquareSolver::result_() const { return solver_.get_x(); }
 

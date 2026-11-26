@@ -317,6 +317,27 @@ TEST_CASE("HierarchicalLeastSquares")
     }
   }
 
+  SUBCASE("Capped solves")
+  {
+    // Five bounds x >= 1 under x = 0 need five activations: with a cap of 2 factorizations the solve fails, unless
+    // acceptCappedSolve takes LexLS's last iterate, which cappedSolves counts
+    for(bool accept : {false, true})
+    {
+      VariablePtr x = Space(5).createVariable("x");
+      LinearizedControlProblem pb;
+      pb.add(x >= 1., {PriorityLevel(0)});
+      pb.add(x == 0., {PriorityLevel(1)});
+      LexLSHLSSolverOptions options;
+      options.max_number_of_factorizations(2);
+      options.acceptCappedSolve(accept);
+      scheme::HierarchicalLeastSquares solver(options);
+      const std::size_t before = LexLSHierarchicalLeastSquareSolver::cappedSolves();
+      FAST_CHECK_EQ(solver.solve(pb), accept);
+      FAST_CHECK_EQ(LexLSHierarchicalLeastSquareSolver::cappedSolves() - before, accept ? 1u : 0u);
+      FAST_CHECK_UNARY(x->value().allFinite());
+    }
+  }
+
   SUBCASE("Empty levels")
   {
     // Levels need not start at 0 nor follow each other: mc_rtc puts constraints at 0 and tasks from 1, and a level

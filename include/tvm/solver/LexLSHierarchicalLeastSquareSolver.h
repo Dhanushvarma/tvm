@@ -28,6 +28,10 @@ class TVM_DLLAPI LexLSHLSSolverOptions : public LexLSSolverOptions
    * step, in the null space of the levels above it, is damped by its factor.
    */
   TVM_ADD_NON_DEFAULT_OPTION(regularizationFactors, std::vector<double>{})
+  /** If \a true, a solve that reaches max_number_of_factorizations succeeds with LexLS's last iterate (counted by
+   * LexLSHierarchicalLeastSquareSolver::cappedSolves) where it would fail.
+   */
+  TVM_ADD_NON_DEFAULT_OPTION(acceptCappedSolve, false)
 
 public:
   using Factory = LexLSHLSSolverFactory;
@@ -38,6 +42,11 @@ class TVM_DLLAPI LexLSHierarchicalLeastSquareSolver : public abstract::Hierarchi
 {
 public:
   LexLSHierarchicalLeastSquareSolver(const LexLSHLSSolverOptions & options = {});
+
+  /** The solves, in this process and by every instance, that reached the factorization cap and returned LexLS's last
+   * iterate (LexLSHLSSolverOptions::acceptCappedSolve): a scheme makes a new instance at each rebuild of its data
+   */
+  static std::size_t cappedSolves() noexcept;
 
 protected:
   void initializeBuild_(const std::vector<int> & nEq, const std::vector<int> & nIneq, bool useBounds) override;
@@ -90,6 +99,8 @@ private:
   bool feasibleFirstLevel_;
   /** See LexLSHLSSolverOptions::regularizationFactors */
   std::vector<double> regularizationFactors_;
+  /** See LexLSHLSSolverOptions::acceptCappedSolve */
+  bool acceptCappedSolve_;
 };
 
 /** A factory class to create LexLSHierarchicalLeastSquareSolver instances with a given
