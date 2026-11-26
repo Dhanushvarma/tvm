@@ -270,5 +270,40 @@ TEST_CASE("HierarchicalLeastSquares")
     // With the four levels, x is unique: the full solution too
     FAST_CHECK_EQ(x->value(), Approx(lexicographic({{A0, b0}, {A1, b1}, {A2b, b2b}, {A3, b3}}, n)).epsilon(1e-8));
   }
+
+  SUBCASE("Empty levels")
+  {
+    // Levels need not start at 0 nor follow each other: mc_rtc puts constraints at 0 and tasks from 1, and a level
+    // empties when its last task is removed. Two tasks pull x0 to opposite targets at levels 1 and 2, a third one holds
+    // the other coordinates at level 3 (posture tasks selecting joints by zero anisotropic weights)
+    for(bool autoDamping : {false, true})
+    {
+      const Index n = 6;
+      VariablePtr x = Space(static_cast<int>(n)).createVariable("x");
+      const MatrixXd I = MatrixXd::Identity(n, n);
+      VectorXd first = VectorXd::Zero(n), others = VectorXd::Ones(n);
+      first(0) = 1.;
+      others(0) = 0.;
+      const VectorXd up = VectorXd::Constant(n, 0.3), down = VectorXd::Constant(n, -0.3), rest = VectorXd::Zero(n);
+
+      LinearizedControlProblem pb;
+      auto tUp = pb.add(I * x - up == 0., {PriorityLevel(1), AnisotropicWeight(first)});
+      pb.add(I * x - down == 0., {PriorityLevel(2), AnisotropicWeight(first)});
+      pb.add(I * x - rest == 0., {PriorityLevel(3), Weight(1e-3), AnisotropicWeight(others)});
+
+      scheme::HierarchicalLeastSquares solver(LexLSHLSSolverOptions{},
+                                              scheme::HierarchicalLeastSquaresOptions().autoDamping(autoDamping));
+      VectorXd expected = VectorXd::Zero(n);
+      expected(0) = 0.3;
+      solver.solve(pb);
+      FAST_CHECK_EQ(x->value(), Approx(expected).epsilon(1e-8));
+
+      // Without the level-1 task, levels 0 and 1 are empty
+      pb.remove(*tUp);
+      solver.solve(pb);
+      expected(0) = -0.3;
+      FAST_CHECK_EQ(x->value(), Approx(expected).epsilon(1e-8));
+    }
+  }
 }
 #endif
