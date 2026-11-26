@@ -6,6 +6,7 @@
 
 #include <iostream>
 #include <numeric> // for std::iota
+#include <string>
 
 namespace tvm
 {
@@ -197,6 +198,31 @@ void LexLSHierarchicalLeastSquareSolver::preAssignmentProcess_() {}
 void LexLSHierarchicalLeastSquareSolver::postAssignmentProcess_()
 {
   solver_.reset();
+  // A row's bounds merge several constraints on the same variables (the bounds at level 0 merge every bound of a
+  // variable), which can cross: a joint limit damper asking more speed than the velocity limit allows. LexLS rejects
+  // such a row, so both bounds take their midpoint, the least-squares compromise between the two constraints
+  auto meet = [this](Eigen::MatrixXd & data, Eigen::Index col, const std::string & where)
+  {
+    for(Eigen::Index r = 0; r < data.rows(); ++r)
+    {
+      double & l = data(r, col);
+      double & u = data(r, col + 1);
+      if(l > u)
+      {
+        if(crossedBounds_ % 1000 == 0)
+        {
+          std::cerr << "[LexLSHierarchicalLeastSquareSolver] " << where << ", row " << r << ": lower bound " << l
+                    << " above upper bound " << u << ", both set to their midpoint (" << crossedBounds_ + 1
+                    << " crossings so far)" << std::endl;
+        }
+        ++crossedBounds_;
+        l = u = 0.5 * (l + u);
+      }
+    }
+  };
+  const Eigen::Index n = variables().totalSize();
+  for(size_t i = 0; i < data_.size(); ++i) { meet(data_[i], n, "level " + std::to_string(i)); }
+  if(useBounds_ && feasibleFirstLevel_) { meet(boundData_, 0, "simple bounds"); }
   int i0 = 0;
   if(useBounds_ && feasibleFirstLevel_)
   {

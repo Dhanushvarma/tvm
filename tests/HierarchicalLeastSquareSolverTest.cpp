@@ -271,6 +271,27 @@ TEST_CASE("HierarchicalLeastSquares")
     FAST_CHECK_EQ(x->value(), Approx(lexicographic({{A0, b0}, {A1, b1}, {A2b, b2b}, {A3, b3}}, n)).epsilon(1e-8));
   }
 
+  SUBCASE("Crossed bounds")
+  {
+    // Two bounds on x at level 0 that cross, as a joint limit damper asking more speed than the velocity limit allows:
+    // they meet at their midpoint, where LexLS would reject the row. With feasibleFirstLevel, the same as simple bounds
+    for(bool feasibleFirstLevel : {false, true})
+    {
+      VariablePtr x = Space(1).createVariable("x");
+      VariablePtr y = Space(1).createVariable("y");
+
+      LinearizedControlProblem pb;
+      pb.add(2. <= x <= 5., {PriorityLevel(0)});
+      pb.add(-5. <= x <= 1., {PriorityLevel(0)});
+      pb.add(x + y == 0., {PriorityLevel(1)});
+
+      scheme::HierarchicalLeastSquares solver(LexLSHLSSolverOptions().feasibleFirstLevel(feasibleFirstLevel));
+      CHECK_NOTHROW(solver.solve(pb));
+      FAST_CHECK_EQ(x->value()[0], doctest::Approx(1.5).epsilon(1e-10));
+      FAST_CHECK_EQ(y->value()[0], doctest::Approx(-1.5).epsilon(1e-10));
+    }
+  }
+
   SUBCASE("Empty levels")
   {
     // Levels need not start at 0 nor follow each other: mc_rtc puts constraints at 0 and tasks from 1, and a level

@@ -78,6 +78,8 @@ private:
 
   bool autoMinNorm_;
   double big_number_;
+  /** Rows whose bounds crossed and met at their midpoint (postAssignmentProcess_), since the solver was made */
+  size_t crossedBounds_ = 0;
   bool feasibleFirstLevel_;
 };
 
