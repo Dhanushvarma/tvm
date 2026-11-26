@@ -1,5 +1,9 @@
 /* Copyright 2022 CNRS-AIST JRL and CNRS-UM LIRMM */
-#if TVM_WITH_LEXLS
+// TVM_USE_LEXLS comes from the generated supported_solvers.h; TVM_WITH_LEXLS, the CMake option, is no macro, so testing
+// it left this file without a test case
+#include <tvm/supported_solvers.h>
+
+#ifdef TVM_USE_LEXLS
 #  include <tvm/solver/LexLSHierarchicalLeastSquareSolver.h>
 #endif
 
@@ -32,7 +36,7 @@ MatrixXd pinv(const MatrixConstRef & M, double eps = 1e-10)
          * svd.matrixU().leftCols(r).transpose();
 }
 
-#if TVM_WITH_LEXLS
+#ifdef TVM_USE_LEXLS
 TEST_CASE("LexLSHierarchicalLeastSquareSolver")
 {
   VariablePtr x = Space(6).createVariable("x");
