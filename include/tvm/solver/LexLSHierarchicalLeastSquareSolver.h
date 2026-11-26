@@ -7,6 +7,8 @@
 
 #include <lexls/lexlsi.h>
 
+#include <vector>
+
 namespace tvm::solver
 {
 class LexLSHLSSolverFactory;
@@ -21,6 +23,11 @@ class TVM_DLLAPI LexLSHLSSolverOptions : public LexLSSolverOptions
    * handled separately (and more efficiently).
    */
   TVM_ADD_NON_DEFAULT_OPTION(feasibleFirstLevel, false)
+  /** Regularization factor of each priority level, from level 0 (levels past the end: none; with autoDamping the
+   * minimum-norm level is the last). LexLS uses them with a Tikhonov regularization_type: each level's least-squares
+   * step, in the null space of the levels above it, is damped by its factor.
+   */
+  TVM_ADD_NON_DEFAULT_OPTION(regularizationFactors, std::vector<double>{})
 
 public:
   using Factory = LexLSHLSSolverFactory;
@@ -81,6 +88,8 @@ private:
   /** Rows whose bounds crossed and met at their midpoint (postAssignmentProcess_), since the solver was made */
   size_t crossedBounds_ = 0;
   bool feasibleFirstLevel_;
+  /** See LexLSHLSSolverOptions::regularizationFactors */
+  std::vector<double> regularizationFactors_;
 };
 
 /** A factory class to create LexLSHierarchicalLeastSquareSolver instances with a given

@@ -292,6 +292,31 @@ TEST_CASE("HierarchicalLeastSquares")
     }
   }
 
+  SUBCASE("Regularization")
+  {
+    // An ill-conditioned level, diag(1, 1e-3) x = (1, 1): undamped x = (1, 1000). Damped by mu, each coordinate is
+    // a b / (a^2 + mu^2), the minimiser of |A x - b|^2 + mu^2 |x|^2
+    const double mu = 0.01;
+    for(bool damped : {false, true})
+    {
+      VariablePtr x = Space(2).createVariable("x");
+      MatrixXd A = Vector2d(1., 1e-3).asDiagonal();
+      VectorXd b = Vector2d(1., 1.);
+      LinearizedControlProblem pb;
+      pb.add(A * x - b == 0., {PriorityLevel(1)});
+      LexLSHLSSolverOptions options;
+      if(damped)
+      {
+        options.regularization_type(LexLS::REGULARIZATION_TIKHONOV);
+        options.regularizationFactors({0., mu});
+      }
+      scheme::HierarchicalLeastSquares solver(options);
+      solver.solve(pb);
+      const Vector2d expected = damped ? Vector2d(1. / (1. + mu * mu), 1e-3 / (1e-6 + mu * mu)) : Vector2d(1., 1000.);
+      FAST_CHECK_EQ(x->value(), Approx(expected).epsilon(1e-8));
+    }
+  }
+
   SUBCASE("Empty levels")
   {
     // Levels need not start at 0 nor follow each other: mc_rtc puts constraints at 0 and tasks from 1, and a level

@@ -17,7 +17,8 @@ LexLSHierarchicalLeastSquareSolver::LexLSHierarchicalLeastSquareSolver(const Lex
 : HierarchicalLeastSquareSolver(options.verbose().value()), boundData_(1, 1), data_(), A_(), l_(), u_(),
   xl_(boundData_.col(0)), xu_(boundData_.col(0)), warmStart_(options.warmStart().value()), solver_(),
   autoMinNorm_(false), big_number_(options.big_number().value()),
-  feasibleFirstLevel_(options.feasibleFirstLevel().value())
+  feasibleFirstLevel_(options.feasibleFirstLevel().value()),
+  regularizationFactors_(options.regularizationFactors().value())
 {
   LexLS::ParametersLexLSI param;
   TVM_PROCESS_OPTION_PUBLIC_ACCESS(max_number_of_factorizations, param);
@@ -246,6 +247,16 @@ void LexLSHierarchicalLeastSquareSolver::postAssignmentProcess_()
 
 bool LexLSHierarchicalLeastSquareSolver::solve_()
 {
+  // The levels' regularization factors (the objective of simple bounds, if any, comes first)
+  if(!regularizationFactors_.empty())
+  {
+    const LexLS::Index i0 = (useBounds_ && feasibleFirstLevel_) ? 1 : 0;
+    for(size_t i = 0; i < data_.size(); ++i)
+    {
+      const double f = i < regularizationFactors_.size() ? regularizationFactors_[i] : 0.;
+      solver_.setRegularizationFactor(static_cast<LexLS::Index>(i) + i0, f);
+    }
+  }
   auto status = solver_.solve();
 
   if(warmStart_)
